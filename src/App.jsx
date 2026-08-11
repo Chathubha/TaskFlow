@@ -12,6 +12,7 @@ const TeamPage = lazy(() => import('./pages/TeamPage'))
 const ProfilePage = lazy(() => import('./pages/ProfilePage'))
 const PaymentsPage = lazy(() => import('./pages/PaymentsPage'))
 const LeavesPage = lazy(() => import('./pages/LeavesPage'))
+const LandingPage = lazy(() => import('./pages/LandingPage'))
 const LoginPage = lazy(() => import('./pages/LoginPage'))
 const RegisterPage = lazy(() => import('./pages/RegisterPage'))
 
@@ -27,7 +28,15 @@ export default function App() {
   return (
     <Suspense fallback={<PageFallback />}>
       <Routes>
-        {/* Public auth pages */}
+        {/* Public landing + auth pages */}
+        <Route
+          path="/"
+          element={
+            <PublicOnlyRoute>
+              <LandingPage />
+            </PublicOnlyRoute>
+          }
+        />
         <Route
           path="/login"
           element={
@@ -62,7 +71,7 @@ export default function App() {
         </Route>
 
         {/* Fallback */}
-        <Route path="*" element={<Navigate to="/dashboard" replace />} />
+        <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </Suspense>
   )
