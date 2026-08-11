@@ -16,7 +16,7 @@ const DEFAULT_FILTERS = {
 
 // Kanban board page — owns filters, the task modal and the "New Task" trigger.
 export default function BoardPage() {
-  const { user } = useAuth()
+  const { user, isAdmin } = useAuth()
   const [users, setUsers] = useState([])
   const [labels, setLabels] = useState([])
   const [filters, setFilters] = useState(DEFAULT_FILTERS)
@@ -66,17 +66,19 @@ export default function BoardPage() {
           </h2>
           <p className="text-sm text-slate-500">Drag tasks between columns to update their status.</p>
         </div>
-        <button
-          type="button"
-          onClick={() => {
-            setEditingTask(null)
-            setModalOpen(true)
-          }}
-          className="flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-indigo-700"
-        >
-          <Plus className="size-4" />
-          New Task
-        </button>
+        {isAdmin && (
+          <button
+            type="button"
+            onClick={() => {
+              setEditingTask(null)
+              setModalOpen(true)
+            }}
+            className="flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-indigo-700"
+          >
+            <Plus className="size-4" />
+            New Task
+          </button>
+        )}
       </div>
 
       <TaskFilters

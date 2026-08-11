@@ -10,6 +10,8 @@ const DashboardPage = lazy(() => import('./pages/DashboardPage'))
 const BoardPage = lazy(() => import('./pages/BoardPage'))
 const TeamPage = lazy(() => import('./pages/TeamPage'))
 const ProfilePage = lazy(() => import('./pages/ProfilePage'))
+const PaymentsPage = lazy(() => import('./pages/PaymentsPage'))
+const LeavesPage = lazy(() => import('./pages/LeavesPage'))
 const LoginPage = lazy(() => import('./pages/LoginPage'))
 const RegisterPage = lazy(() => import('./pages/RegisterPage'))
 
@@ -54,6 +56,8 @@ export default function App() {
           <Route path="/dashboard" element={<DashboardPage />} />
           <Route path="/board" element={<BoardPage />} />
           <Route path="/team" element={<TeamPage />} />
+          <Route path="/payments" element={<PaymentsPage />} />
+          <Route path="/leaves" element={<LeavesPage />} />
           <Route path="/profile" element={<ProfilePage />} />
         </Route>
 

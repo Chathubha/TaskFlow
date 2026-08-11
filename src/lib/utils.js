@@ -71,6 +71,17 @@ export function avatarColor(id = '') {
   return AVATAR_COLORS[hash % AVATAR_COLORS.length]
 }
 
+/** Formats a number as a currency string, e.g. "LKR 75,000". */
+export function formatMoney(value) {
+  const num = Number(value ?? 0)
+  if (Number.isNaN(num)) return 'LKR 0'
+  return new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: 'LKR',
+    maximumFractionDigits: 0,
+  }).format(num)
+}
+
 /** Returns a flat CSS style map for the drag shadow applied while dragging. */
 export function getDragShadowStyle(isDragging) {
   return {

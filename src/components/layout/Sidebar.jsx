@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom'
-import { KanbanSquare, LayoutDashboard, LogOut, UserCircle, Users } from 'lucide-react'
+import { CalendarOff, KanbanSquare, LayoutDashboard, LogOut, Users, Wallet } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 import { ROLES } from '../../lib/constants'
 import Avatar from '../Avatar'
@@ -8,7 +8,8 @@ const NAV_ITEMS = [
   { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { to: '/board', label: 'Board', icon: KanbanSquare },
   { to: '/team', label: 'Team', icon: Users },
-  { to: '/profile', label: 'Profile', icon: UserCircle },
+  { to: '/leaves', label: 'Leave Allocation', icon: CalendarOff },
+  { to: '/payments', label: 'Payments', icon: Wallet },
 ]
 
 export default function Sidebar() {
