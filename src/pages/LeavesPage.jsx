@@ -1,18 +1,17 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
+  CalendarDays,
   CalendarOff,
   Check,
-  CheckCircle2,
   Loader2,
   Palette,
   Plus,
   Trash2,
-  Users,
   X,
 } from 'lucide-react'
 import { supabase } from '../services/supabaseClient'
 import { useAuth } from '../context/AuthContext'
-import { LABEL_COLORS } from '../lib/constants'
+import { LABEL_COLORS, MONTHLY_LEAVE_LIMIT } from '../lib/constants'
 import Avatar from '../components/Avatar'
 
 const inputClasses =
@@ -30,8 +29,18 @@ function calcDays(start, end) {
   return Math.max(0, Math.round(ms / 86400000)) + 1
 }
 
-// Leave Allocation — balances per leave type, request/approval workflow,
-// admin allocation and leave-type management.
+// Returns a "YYYY-MM-01" key for a date string.
+function monthKey(dateStr) {
+  const d = new Date(dateStr)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`
+}
+
+function monthLabel(monthDate) {
+  return new Date(`${monthDate}T00:00:00`).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
+}
+
+// Leave Allocation — every user gets MONTHLY_LEAVE_LIMIT days per month.
+// Includes the request/approval workflow and leave-type management.
 export default function LeavesPage() {
   const { user, isAdmin } = useAuth()
   const [tab, setTab] = useState('overview')
@@ -42,24 +51,19 @@ export default function LeavesPage() {
   const [types, setTypes] = useState([])
   const [balances, setBalances] = useState([])
   const [requests, setRequests] = useState([])
-  const [members, setMembers] = useState([])
 
   // Request form
   const [form, setForm] = useState({ typeId: '', start: '', end: '', reason: '' })
   const [submitting, setSubmitting] = useState(false)
 
-  // Allocation form
-  const [alloc, setAlloc] = useState({ userId: '', typeId: '', days: '', year: new Date().getFullYear() })
-  const [allocating, setAllocating] = useState(false)
-
   // Type form
-  const [typeForm, setTypeForm] = useState({ name: '', color: LABEL_COLORS[0], days: 20 })
+  const [typeForm, setTypeForm] = useState({ name: '', color: LABEL_COLORS[0], days: MONTHLY_LEAVE_LIMIT })
   const [savingType, setSavingType] = useState(false)
 
-  const year = new Date().getFullYear()
+  const currentMonthKey = monthKey(new Date())
 
   const load = async () => {
-    const [typesRes, balancesRes, requestsRes, membersRes] = await Promise.all([
+    const [typesRes, balancesRes, requestsRes] = await Promise.all([
       supabase.from('leave_types').select('*').order('name'),
       supabase.from('leave_balances').select('*'),
       isAdmin
@@ -72,18 +76,16 @@ export default function LeavesPage() {
             .select('*, type:leave_type_id(id, name, color)')
             .eq('user_id', user.id)
             .order('created_at', { ascending: false }),
-      supabase.from('profiles').select('id, full_name, email, avatar_url').order('full_name'),
     ])
 
-    if (typesRes.error || balancesRes.error || requestsRes.error || membersRes.error) {
-      setError(typesRes.error?.message ?? balancesRes.error?.message ?? requestsRes.error?.message ?? membersRes.error?.message)
+    if (typesRes.error || balancesRes.error || requestsRes.error) {
+      setError(typesRes.error?.message ?? balancesRes.error?.message ?? requestsRes.error?.message)
       setLoading(false)
       return
     }
     setTypes(typesRes.data ?? [])
     setBalances(balancesRes.data ?? [])
     setRequests(requestsRes.data ?? [])
-    setMembers(membersRes.data ?? [])
     setError(null)
     setLoading(false)
   }
@@ -94,18 +96,16 @@ export default function LeavesPage() {
 
   const balanceMap = useMemo(() => {
     const map = {}
-    for (const b of balances) map[`${b.user_id}:${b.leave_type_id}:${b.year}`] = b
+    for (const b of balances) map[`${b.user_id}:${b.month.slice(0, 10)}`] = b
     return map
   }, [balances])
 
-  const getRemaining = (userId, typeId, forYear) => {
-    const b = balanceMap[`${userId}:${typeId}:${forYear}`]
-    return (Number(b?.allocated_days) || 0) - (Number(b?.used_days) || 0)
-  }
+  const getUsed = (userId, monthDate) =>
+    Number(balanceMap[`${userId}:${monthDate}`]?.used_days) || 0
 
   const days = calcDays(form.start, form.end)
-  const reqYear = form.start ? new Date(form.start).getFullYear() : year
-  const remaining = form.typeId ? getRemaining(user.id, form.typeId, reqYear) : 0
+  const reqMonth = form.start ? monthKey(form.start) : currentMonthKey
+  const reqRemaining = Math.max(0, MONTHLY_LEAVE_LIMIT - getUsed(user.id, reqMonth))
 
   const set = (field) => (e) => setForm((prev) => ({ ...prev, [field]: e.target.value }))
 
@@ -158,45 +158,6 @@ export default function LeavesPage() {
     load()
   }
 
-  const allocate = async (e) => {
-    e.preventDefault()
-    const daysNum = Number(alloc.days)
-    if (!alloc.userId || !alloc.typeId || daysNum <= 0) return
-    setAllocating(true)
-    setError(null)
-
-    const key = `${alloc.userId}:${alloc.typeId}:${alloc.year}`
-    const existing = balanceMap[key]
-    if (existing) {
-      const { error: updateError } = await supabase
-        .from('leave_balances')
-        .update({ allocated_days: (Number(existing.allocated_days) || 0) + daysNum })
-        .eq('id', existing.id)
-      if (updateError) {
-        setAllocating(false)
-        setError(updateError.message)
-        return
-      }
-    } else {
-      const { error: insertError } = await supabase.from('leave_balances').insert({
-        user_id: alloc.userId,
-        leave_type_id: alloc.typeId,
-        year: alloc.year,
-        allocated_days: daysNum,
-        used_days: 0,
-      })
-      if (insertError) {
-        setAllocating(false)
-        setError(insertError.message)
-        return
-      }
-    }
-    setAllocating(false)
-    setAlloc({ userId: '', typeId: '', days: '', year: new Date().getFullYear() })
-    setNotice('Leave allocated.')
-    load()
-  }
-
   const addType = async (e) => {
     e.preventDefault()
     if (!typeForm.name.trim()) return
@@ -212,7 +173,7 @@ export default function LeavesPage() {
       setError(insertError.message)
       return
     }
-    setTypeForm({ name: '', color: LABEL_COLORS[0], days: 20 })
+    setTypeForm({ name: '', color: LABEL_COLORS[0], days: MONTHLY_LEAVE_LIMIT })
     setNotice('Leave type added.')
     load()
   }
@@ -244,22 +205,19 @@ export default function LeavesPage() {
     )
   }
 
-  const myBalances = types.map((type) => ({
-    type,
-    allocated: Number(balanceMap[`${user.id}:${type.id}:${year}`]?.allocated_days) || 0,
-    used: Number(balanceMap[`${user.id}:${type.id}:${year}`]?.used_days) || 0,
-  }))
+  const myUsed = getUsed(user.id, currentMonthKey)
+  const myRemaining = Math.max(0, MONTHLY_LEAVE_LIMIT - myUsed)
 
   const TABS = [
     { id: 'overview', label: 'Overview' },
-    ...(isAdmin ? [{ id: 'requests', label: 'All Requests' }, { id: 'types', label: 'Types & Allocation' }] : []),
+    ...(isAdmin ? [{ id: 'requests', label: 'All Requests' }, { id: 'types', label: 'Leave Types' }] : []),
   ]
 
   return (
     <div className="flex flex-col gap-5">
       <div>
         <h2 className="text-xl font-semibold text-slate-900">Leave Allocation</h2>
-        <p className="text-sm text-slate-500">Request leave and track your balance.</p>
+        <p className="text-sm text-slate-500">Every member gets {MONTHLY_LEAVE_LIMIT} leave days per month.</p>
       </div>
 
       {/* Tabs */}
@@ -283,33 +241,30 @@ export default function LeavesPage() {
 
       {tab === 'overview' && (
         <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
-          {/* Balances */}
+          {/* Balance + requests */}
           <div className="flex flex-col gap-4 lg:col-span-2">
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-              {myBalances.map(({ type, allocated, used }) => (
-                <div key={type.id} className="rounded-xl border border-slate-200 bg-white p-4">
-                  <div className="flex items-center justify-between">
-                    <span className="inline-flex items-center gap-1.5 rounded px-2 py-0.5 text-[11px] font-semibold text-white" style={{ backgroundColor: type.color }}>
-                      {type.name}
-                    </span>
-                  </div>
-                  <p className="mt-3 text-xl font-bold text-slate-900">
-                    {allocated - used}
-                    <span className="text-sm font-medium text-slate-400"> / {allocated} days</span>
-                  </p>
-                  <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-100">
-                    <div
-                      className="h-full rounded-full"
-                      style={{ width: `${allocated ? Math.min(100, (used / allocated) * 100) : 0}%`, backgroundColor: type.color }}
-                    />
-                  </div>
-                  <p className="mt-2 text-[11px] text-slate-500">
-                    {used} used · {year}
-                  </p>
-                </div>
-              ))}
-              {myBalances.length === 0 && (
-                <p className="col-span-full text-sm text-slate-400">No leave types configured yet.</p>
+            <div className="rounded-xl border border-slate-200 bg-white p-5">
+              <div className="flex items-center justify-between">
+                <h3 className="flex items-center gap-1.5 text-sm font-semibold text-slate-800">
+                  <CalendarDays className="size-4" />
+                  This month ({monthLabel(currentMonthKey)})
+                </h3>
+                <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-600">
+                  {myUsed} used of {MONTHLY_LEAVE_LIMIT}
+                </span>
+              </div>
+              <p className="mt-3 text-xl font-bold text-slate-900">
+                {myRemaining}
+                <span className="text-sm font-medium text-slate-400"> / {MONTHLY_LEAVE_LIMIT} days remaining</span>
+              </p>
+              <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-100">
+                <div
+                  className={`h-full rounded-full transition-all ${myUsed >= MONTHLY_LEAVE_LIMIT ? 'bg-rose-500' : 'bg-indigo-500'}`}
+                  style={{ width: `${Math.min(100, (myUsed / MONTHLY_LEAVE_LIMIT) * 100)}%` }}
+                />
+              </div>
+              {myUsed >= MONTHLY_LEAVE_LIMIT && (
+                <p className="mt-2 text-xs font-medium text-rose-600">Monthly leave limit reached.</p>
               )}
             </div>
 
@@ -369,7 +324,7 @@ export default function LeavesPage() {
                   <option value="">Select type…</option>
                   {types.map((t) => (
                     <option key={t.id} value={t.id}>
-                      {t.name} ({getRemaining(user.id, t.id, reqYear)} remaining)
+                      {t.name}
                     </option>
                   ))}
                 </select>
@@ -395,25 +350,14 @@ export default function LeavesPage() {
                 />
               </div>
               <p className="rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-600">
-                {days > 0 ? `${days} day${days > 1 ? 's' : ''}` : '—'} ·{' '}
-                {form.typeId ? (
-                  <span className={remaining - days < 0 ? 'font-semibold text-rose-600' : ''}>
-                    {remaining} remaining for {reqYear}
-                  </span>
-                ) : (
-                  'Select a type to see balance'
-                )}
+                {days > 0 ? `${days} day${days > 1 ? 's' : ''}` : '—'} · {monthLabel(reqMonth)} ·{' '}
+                <span className={days > reqRemaining ? 'font-semibold text-rose-600' : ''}>
+                  {reqRemaining} remaining
+                </span>
               </p>
               <button
                 type="submit"
-                disabled={
-                  submitting ||
-                  !form.typeId ||
-                  !form.start ||
-                  !form.end ||
-                  days <= 0 ||
-                  (form.typeId && days > remaining)
-                }
+                disabled={submitting || !form.typeId || !form.start || !form.end || days <= 0 || days > reqRemaining}
                 className="flex items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-indigo-700 disabled:opacity-50"
               >
                 {submitting && <Loader2 className="size-4 animate-spin" />}
@@ -510,148 +454,64 @@ export default function LeavesPage() {
       )}
 
       {isAdmin && tab === 'types' && (
-        <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
-          {/* Leave types */}
-          <div className="rounded-xl border border-slate-200 bg-white">
-            <div className="border-b border-slate-200 px-5 py-4">
-              <h3 className="flex items-center gap-1.5 text-sm font-semibold text-slate-800">
-                <Palette className="size-4" />
-                Leave types
-              </h3>
-            </div>
-            <ul className="flex flex-col divide-y divide-slate-100">
-              {types.map((t) => (
-                <li key={t.id} className="flex items-center gap-3 px-5 py-3">
-                  <span className="size-3 rounded-full" style={{ backgroundColor: t.color }} />
-                  <span className="flex-1 text-sm font-medium text-slate-800">{t.name}</span>
-                  <span className="text-xs text-slate-500">{t.days_per_year} days / year</span>
-                  <button
-                    type="button"
-                    onClick={() => deleteType(t)}
-                    title="Delete type"
-                    className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-rose-50 hover:text-rose-600"
-                  >
-                    <Trash2 className="size-4" />
-                  </button>
-                </li>
-              ))}
-              {types.length === 0 && (
-                <li className="px-5 py-8 text-center text-sm text-slate-400">No leave types yet.</li>
-              )}
-            </ul>
-
-            <form onSubmit={addType} className="flex flex-col gap-3 border-t border-slate-200 p-5">
-              <p className="text-xs font-semibold text-slate-600">Add leave type</p>
-              <div className="flex items-center gap-2">
-                <div className="flex gap-1">
-                  {LABEL_COLORS.map((color) => (
-                    <button
-                      key={color}
-                      type="button"
-                      onClick={() => setTypeForm((prev) => ({ ...prev, color }))}
-                      className={`size-5 rounded-full transition-transform ${typeForm.color === color ? 'scale-110 ring-2 ring-slate-800 ring-offset-1' : ''}`}
-                      style={{ backgroundColor: color }}
-                    />
-                  ))}
-                </div>
-                <input
-                  type="text"
-                  value={typeForm.name}
-                  onChange={(e) => setTypeForm((prev) => ({ ...prev, name: e.target.value }))}
-                  placeholder="Type name"
-                  className="min-w-0 flex-1 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 outline-none transition-colors focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20"
-                />
-                <input
-                  type="number"
-                  min="0"
-                  value={typeForm.days}
-                  onChange={(e) => setTypeForm((prev) => ({ ...prev, days: e.target.value }))}
-                  title="Days per year"
-                  className="w-20 rounded-lg border border-slate-300 bg-white px-2 py-2 text-sm text-slate-800 outline-none transition-colors focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20"
-                />
-                <button
-                  type="submit"
-                  disabled={savingType || !typeForm.name.trim()}
-                  className="flex items-center gap-1 rounded-lg bg-indigo-600 px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-indigo-700 disabled:opacity-50"
-                >
-                  {savingType ? <Loader2 className="size-3.5 animate-spin" /> : <Plus className="size-3.5" />}
-                  Add
-                </button>
-              </div>
-            </form>
-          </div>
-
-          {/* Allocate */}
-          <div className="h-fit rounded-xl border border-slate-200 bg-white p-5">
-            <h3 className="mb-4 flex items-center gap-1.5 text-sm font-semibold text-slate-800">
-              <Users className="size-4" />
-              Allocate leave
+        <div className="rounded-xl border border-slate-200 bg-white">
+          <div className="border-b border-slate-200 px-5 py-4">
+            <h3 className="flex items-center gap-1.5 text-sm font-semibold text-slate-800">
+              <Palette className="size-4" />
+              Leave types
             </h3>
-            <form onSubmit={allocate} className="flex flex-col gap-3.5">
-              <div>
-                <label className="mb-1 block text-xs font-semibold text-slate-600">Employee</label>
-                <select value={alloc.userId} onChange={(e) => setAlloc((prev) => ({ ...prev, userId: e.target.value }))} className={inputClasses}>
-                  <option value="">Select employee…</option>
-                  {members.map((m) => (
-                    <option key={m.id} value={m.id}>
-                      {m.full_name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="mb-1 block text-xs font-semibold text-slate-600">Leave type</label>
-                <select value={alloc.typeId} onChange={(e) => setAlloc((prev) => ({ ...prev, typeId: e.target.value }))} className={inputClasses}>
-                  <option value="">Select type…</option>
-                  {types.map((t) => (
-                    <option key={t.id} value={t.id}>
-                      {t.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="mb-1 block text-xs font-semibold text-slate-600">Days to add</label>
-                  <input
-                    type="number"
-                    min="0"
-                    step="1"
-                    value={alloc.days}
-                    onChange={(e) => setAlloc((prev) => ({ ...prev, days: e.target.value }))}
-                    className={inputClasses}
-                  />
-                </div>
-                <div>
-                  <label className="mb-1 block text-xs font-semibold text-slate-600">Year</label>
-                  <input
-                    type="number"
-                    min="2000"
-                    max="2100"
-                    value={alloc.year}
-                    onChange={(e) => setAlloc((prev) => ({ ...prev, year: Number(e.target.value) }))}
-                    className={inputClasses}
-                  />
-                </div>
-              </div>
+          </div>
+          <ul className="flex flex-col divide-y divide-slate-100">
+            {types.map((t) => (
+              <li key={t.id} className="flex items-center gap-3 px-5 py-3">
+                <span className="size-3 rounded-full" style={{ backgroundColor: t.color }} />
+                <span className="flex-1 text-sm font-medium text-slate-800">{t.name}</span>
+                <button
+                  type="button"
+                  onClick={() => deleteType(t)}
+                  title="Delete type"
+                  className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-rose-50 hover:text-rose-600"
+                >
+                  <Trash2 className="size-4" />
+                </button>
+              </li>
+            ))}
+            {types.length === 0 && (
+              <li className="px-5 py-8 text-center text-sm text-slate-400">No leave types yet.</li>
+            )}
+          </ul>
 
-              {alloc.userId && alloc.typeId && alloc.year && (
-                <p className="rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-600">
-                  Current balance: {getRemaining(alloc.userId, alloc.typeId, alloc.year)} day(s)
-                </p>
-              )}
-
+          <form onSubmit={addType} className="flex flex-col gap-3 border-t border-slate-200 p-5">
+            <p className="text-xs font-semibold text-slate-600">Add leave type</p>
+            <div className="flex items-center gap-2">
+              <div className="flex gap-1">
+                {LABEL_COLORS.map((color) => (
+                  <button
+                    key={color}
+                    type="button"
+                    onClick={() => setTypeForm((prev) => ({ ...prev, color }))}
+                    className={`size-5 rounded-full transition-transform ${typeForm.color === color ? 'scale-110 ring-2 ring-slate-800 ring-offset-1' : ''}`}
+                    style={{ backgroundColor: color }}
+                  />
+                ))}
+              </div>
+              <input
+                type="text"
+                value={typeForm.name}
+                onChange={(e) => setTypeForm((prev) => ({ ...prev, name: e.target.value }))}
+                placeholder="Type name"
+                className="min-w-0 flex-1 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 outline-none transition-colors focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20"
+              />
               <button
                 type="submit"
-                disabled={allocating || !alloc.userId || !alloc.typeId || !(Number(alloc.days) > 0)}
-                className="flex items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-indigo-700 disabled:opacity-50"
+                disabled={savingType || !typeForm.name.trim()}
+                className="flex items-center gap-1 rounded-lg bg-indigo-600 px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-indigo-700 disabled:opacity-50"
               >
-                {allocating && <Loader2 className="size-4 animate-spin" />}
-                <CheckCircle2 className="size-4" />
-                Allocate
+                {savingType ? <Loader2 className="size-3.5 animate-spin" /> : <Plus className="size-3.5" />}
+                Add
               </button>
-            </form>
-          </div>
+            </div>
+          </form>
         </div>
       )}
     </div>

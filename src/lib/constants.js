@@ -63,3 +63,6 @@ export const LABEL_COLORS = [
   '#8b5cf6', // violet
   '#14b8a6', // teal
 ]
+
+// Each user is entitled to this many leave days per calendar month.
+export const MONTHLY_LEAVE_LIMIT = 5
