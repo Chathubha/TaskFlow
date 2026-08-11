@@ -12,11 +12,15 @@ const NAV_ITEMS = [
   { to: '/payments', label: 'Payments', icon: Wallet },
 ]
 
-export default function Sidebar() {
+export default function Sidebar({ open = false, onClose }) {
   const { profile, signOut } = useAuth()
 
   return (
-    <aside className="flex w-64 shrink-0 flex-col bg-slate-900 text-slate-300">
+    <aside
+      className={`fixed inset-y-0 left-0 z-40 flex w-64 shrink-0 transform flex-col bg-slate-900 text-slate-300 transition-transform duration-200 lg:static lg:translate-x-0 ${
+        open ? 'translate-x-0' : '-translate-x-full'
+      }`}
+    >
       {/* Brand */}
       <div className="flex items-center gap-2.5 px-5 py-5">
         <span className="flex size-9 items-center justify-center rounded-lg bg-indigo-500 text-white">
@@ -34,6 +38,7 @@ export default function Sidebar() {
           <NavLink
             key={to}
             to={to}
+            onClick={onClose}
             className={({ isActive }) =>
               `flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors ${
                 isActive
