@@ -1,0 +1,81 @@
+// Small shared helpers used across components.
+
+/** Formats a YYYY-MM-DD date as a short human label, e.g. "Aug 11". */
+export function formatDate(dateStr) {
+  if (!dateStr) return null
+  const d = new Date(`${dateStr}T00:00:00`)
+  if (Number.isNaN(d.getTime())) return null
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+}
+
+/** True when a YYYY-MM-DD date is before today (ignores time). */
+export function isOverdue(dateStr) {
+  if (!dateStr) return false
+  const d = new Date(`${dateStr}T00:00:00`)
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  return d < today
+}
+
+/** True when a YYYY-MM-DD date is within the next `withinDays` days (today or later). */
+export function isDueSoon(dateStr, withinDays = 3) {
+  if (!dateStr) return false
+  const d = new Date(`${dateStr}T00:00:00`)
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  const diff = Math.ceil((d - today) / 86400000)
+  return diff >= 0 && diff <= withinDays
+}
+
+/** Returns a relative label for a date: "Today", "Tomorrow", or formatted. */
+export function relativeDate(dateStr) {
+  if (!dateStr) return null
+  const d = new Date(`${dateStr}T00:00:00`)
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  const diff = Math.ceil((d - today) / 86400000)
+  if (diff === 0) return 'Today'
+  if (diff === 1) return 'Tomorrow'
+  if (diff === -1) return 'Yesterday'
+  return formatDate(dateStr)
+}
+
+/** Returns up to two initials from a person's name, e.g. "Jane Doe" -> "JD". */
+export function initials(name = '') {
+  return name
+    .trim()
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((word) => word[0])
+    .join('')
+    .toUpperCase()
+}
+
+/** Deterministic pastel color per assignee id — keeps avatars stable. */
+const AVATAR_COLORS = [
+  'bg-indigo-500',
+  'bg-blue-500',
+  'bg-emerald-500',
+  'bg-amber-500',
+  'bg-rose-500',
+  'bg-violet-500',
+  'bg-teal-500',
+]
+
+export function avatarColor(id = '') {
+  if (!id) return 'bg-slate-400'
+  let hash = 0
+  for (let i = 0; i < id.length; i += 1) {
+    hash = (hash * 31 + id.charCodeAt(i)) % 1000
+  }
+  return AVATAR_COLORS[hash % AVATAR_COLORS.length]
+}
+
+/** Returns a flat CSS style map for the drag shadow applied while dragging. */
+export function getDragShadowStyle(isDragging) {
+  return {
+    boxShadow: isDragging
+      ? '0 10px 20px rgba(15, 23, 42, 0.18), 0 4px 8px rgba(15, 23, 42, 0.12)'
+      : undefined,
+  }
+}
