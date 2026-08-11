@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom'
-import { Bell } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 import Avatar from '../Avatar'
+import NotificationBell from '../notifications/NotificationBell'
 
 const PAGE_TITLES = {
   '/dashboard': 'Dashboard',
@@ -24,14 +24,7 @@ export default function Navbar({ currentPath }) {
       </div>
 
       <div className="flex items-center gap-4">
-        <button
-          type="button"
-          title="Notifications"
-          className="relative rounded-lg p-2 text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-700"
-        >
-          <Bell className="size-5" />
-          <span className="absolute right-1.5 top-1.5 size-2 rounded-full bg-rose-500 ring-2 ring-white" />
-        </button>
+        <NotificationBell />
         <Link
           to="/profile"
           title="View profile"
